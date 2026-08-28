@@ -1,0 +1,15 @@
+# Build outputs
+/nacos3-scopehole
+*.exe
+*.test
+*.out
+
+# Coverage and profiling
+coverage.*
+*.prof
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
