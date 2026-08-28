@@ -453,4 +453,4 @@ go test ./...
 
 ## 致谢
 
-漏洞分析与验证过程由 [OpenAI Daybreak — Trusted Access for Cyber](https://openai.com/daybreak/) 辅助完成。
+漏洞分析与验证过程由 [OpenAI Daybreak Blue](https://developers.openai.com/api/docs/models) 辅助完成。
