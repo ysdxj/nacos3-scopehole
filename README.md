@@ -186,14 +186,35 @@ if (!isAuthEnabled()) {
 
 ### 3. 从 HTTP 入口到持久化调用
 
-三个 Controller 的类级路径分别是 `/v3/auth/user`、`/v3/auth/role` 和 `/v3/auth/permission`。受影响方法都带有 `@Secured`，但均缺少 `apiType`：
+三个 Controller 的类级路径分别是 `/v3/auth/user`、`/v3/auth/role` 和 `/v3/auth/permission`。下面三个写方法都带有 `@Secured`，但均缺少 `apiType`；请求越过过滤器后，会沿 Service 层落到对应的持久化接口。
 
-| 未认证入口 | 3.2.3 代码位置 | 持久化调用 | 直接结果 |
-|---|---|---|---|
-| `POST /nacos/v3/auth/user` | [`UserControllerV3.java:109-118`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/UserControllerV3.java#L109-L118) | `userDetailsService.createUser(...)` | 创建可登录账户 |
-| `POST /nacos/v3/auth/role` | [`RoleControllerV3.java:64-70`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/RoleControllerV3.java#L64-L70) | `roleService.addRole(...)` | 创建角色并绑定账户 |
-| `POST /nacos/v3/auth/permission` | [`PermissionControllerV3.java:68-75`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/PermissionControllerV3.java#L68-L75) | `nacosRoleService.addPermission(...)` | 写入攻击者指定的资源与动作 |
-| `GET /nacos/v3/auth/user/list` | [`UserControllerV3.java:259-271`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/UserControllerV3.java#L259-L271) | `userDetailsService.getUsers(...)` | 无写入判断管理面是否被错分 |
+1. **创建账户** — `POST /nacos/v3/auth/user`
+
+   [`UserControllerV3.createUser()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/UserControllerV3.java#L109-L118)
+   → `NacosUserService.createUser()`
+   → [`UserPersistService.createUser()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/users/NacosUserServiceDirectImpl.java#L82-L87)
+   → 向 `users` 表写入可登录账户。
+
+2. **绑定角色** — `POST /nacos/v3/auth/role`
+
+   [`RoleControllerV3.addRole()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/RoleControllerV3.java#L64-L70)
+   → `NacosRoleService.addRole()`
+   → [`RolePersistService.addRole()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/roles/NacosRoleServiceDirectImpl.java#L125-L145)
+   → 向 `roles` 表写入用户—角色关系。
+
+3. **授予权限** — `POST /nacos/v3/auth/permission`
+
+   [`PermissionControllerV3.addPermission()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/PermissionControllerV3.java#L68-L75)
+   → `NacosRoleService.addPermission()`
+   → [`PermissionPersistService.addPermission()`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/roles/NacosRoleServiceDirectImpl.java#L178-L182)
+   → 向 `permissions` 表写入角色—资源—动作关系。
+
+两种数据源执行相同的三类 `INSERT`，仅执行器不同：
+
+- **内置数据源：** 使用 `DatabaseOperate` 写入 [`users`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/EmbeddedUserPersistServiceImpl.java#L54-L59)、[`roles`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/EmbeddedRolePersistServiceImpl.java#L104-L110) 和 [`permissions`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/EmbeddedPermissionPersistServiceImpl.java#L84-L87)。
+- **外置数据源：** 使用 `JdbcTemplate` 写入 [`users`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/ExternalUserPersistServiceImpl.java#L65-L69)、[`roles`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/ExternalRolePersistServiceImpl.java#L124-L129) 和 [`permissions`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/persistence/ExternalPermissionPersistServiceImpl.java#L100-L105)。
+
+`GET /nacos/v3/auth/user/list` 是独立的只读证据：它调用 `findUsers(...)` 或 `getUsers(...)` 返回用户分页（[`UserControllerV3.java:259-271`](https://github.com/alibaba/nacos/blob/c843da5bee635e2e4c14abf0386057eb1128db47/plugin-default-impl/nacos-default-auth-plugin/src/main/java/com/alibaba/nacos/plugin/auth/impl/controller/v3/UserControllerV3.java#L259-L271)），本工具用它进行零写入探测，不属于上表的持久化写入链。
 
 `createUser` 并非孤立问题。单独创建一个无角色账户的影响有限；角色和权限接口同时错分，才组成完整的权限提升链。
 

@@ -200,8 +200,7 @@ func reprString(s string) string {
 	return b.String()
 }
 
-// Repr renders a value the way Python's repr would; used for output lines
-// formatted with {!r} in the original tool's messages.
+// Repr renders a value in Python repr form for stable CLI output.
 func Repr(v any) string {
 	switch t := v.(type) {
 	case nil:
